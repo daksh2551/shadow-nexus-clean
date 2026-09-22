@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"
+  />
+
+  <title>Shadow Nexus 2</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #070510;
+      color: white;
+      font-family: Arial, sans-serif;
+      touch-action: none;
+    }
+
+    #app {
+      width: 100vw;
+      height: 100dvh;
+      min-height: 100%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #game {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #build {
+      position: fixed;
+      left: max(8px, env(safe-area-inset-left));
+      bottom: max(6px, env(safe-area-inset-bottom));
+      z-index: 9999;
+      color: #8e879d;
+      font-size: 11px;
+      pointer-events: none;
+    }
+
+    #boot-error {
+      display: none;
+      position: fixed;
+      inset: 20px;
+      z-index: 10000;
+      padding: 20px;
+      background: #260b18;
+      border: 1px solid #ff335f;
+      color: white;
+      overflow: auto;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+  </div>
+
+  <div id="build">SN2 v0.0.1</div>
+  <pre id="boot-error"></pre>
+
+  <script>
+    window.SN2_BUILD = "0.0.1";
+
+    window.addEventListener("error", (event) => {
+      const box = document.getElementById("boot-error");
+      box.style.display = "block";
+      box.textContent =
+        "SHADOW NEXUS ERROR\n\n" +
+        (event.error?.stack || event.message || "Unknown error");
+    });
+
+    window.addEventListener("unhandledrejection", (event) => {
+      const box = document.getElementById("boot-error");
+      box.style.display = "block";
+      box.textContent =
+        "SHADOW NEXUS PROMISE ERROR\n\n" +
+        (event.reason?.stack || event.reason || "Unknown error");
+    });
+  </script>
+
+  <script src="game.js"></script>
+</body>
+</html>
