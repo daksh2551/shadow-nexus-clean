@@ -1,7 +1,7 @@
 "use strict";
 
 (() => {
-  const BUILD = "0.0.1";
+  const BUILD = "0.0.2";
 
   const GameState = Object.freeze({
     MENU: "MENU",
@@ -11,100 +11,586 @@
   });
 
   let gameState = GameState.MENU;
-  let previousState = null;
 
   const canvas = document.getElementById("game");
+
   const ctx = canvas.getContext("2d", {
-    alpha: false,
-    desynchronized: true
+    alpha: false
   });
 
   if (!ctx) {
-    throw new Error("Unable to create 2D rendering context.");
+    throw new Error("Unable to create 2D canvas.");
   }
 
-  const input = {
-    left: false,
-    right: false,
-    up: false,
-    down: false
-  };
+  let W = 1;
+  let H = 1;
 
   const player = {
-    x: 0,
-    y: 0,
-    radius: 24,
+    x: 100,
+    y: 100,
+    radius: 22,
     speed: 260,
     hp: 100,
     maxHp: 100
   };
 
   const portal = {
-    x: 0,
-    y: 0,
+    x: 500,
+    y: 200,
     radius: 55,
     active: false
   };
 
+  const input = {
+    x: 0,
+    y: 0
+  };
+
   let enemiesRemaining = 1;
-  let stateChangedAt = performance.now();
+  let menuButton = null;
+
   let lastTime = performance.now();
 
-  function setGameState(nextState) {
-    if (nextState === gameState) return;
+  function resize() {
+    W = Math.max(1, window.innerWidth);
+    H = Math.max(1, window.innerHeight);
 
-    console.log(`[SN2] STATE ${gameState} -> ${nextState}`);
+    // Deliberately render at CSS resolution.
+    // No high-DPI multiplier for this performance baseline.
+    canvas.width = W;
+    canvas.height = H;
 
-    previousState = gameState;
-    gameState = nextState;
-    stateChangedAt = performance.now();
+    canvas.style.width = `${W}px`;
+    canvas.style.height = `${H}px`;
 
-    clearMovement();
+    if (gameState !== GameState.PLAYING) {
+      resetPositions();
+    }
+  }
 
-    if (nextState === GameState.PLAYING) {
+  function resetPositions() {
+    player.x = W * 0.20;
+    player.y = H * 0.50;
+
+    portal.x = W * 0.82;
+    portal.y = H * 0.50;
+  }
+
+  window.addEventListener("resize", resize);
+  resize();
+
+  function setGameState(next) {
+    if (next === gameState) return;
+
+    console.log(
+      `[SN2] ${gameState} -> ${next}`
+    );
+
+    gameState = next;
+    clearInput();
+
+    if (next === GameState.PLAYING) {
       hideOverlay();
     }
 
-    if (nextState === GameState.PLAYER_DEAD) {
-      showGameOver();
+    if (next === GameState.PLAYER_DEAD) {
+      showOverlay(
+        "GAME OVER",
+        "Death state works.",
+        [
+          ["RETRY", resetLevel],
+          ["MAIN MENU", () =>
+            setGameState(GameState.MENU)]
+        ]
+      );
     }
 
-    if (nextState === GameState.LEVEL_COMPLETE) {
-      showLevelComplete();
+    if (next === GameState.LEVEL_COMPLETE) {
+      showOverlay(
+        "LEVEL COMPLETE",
+        "Portal state works.",
+        [
+          ["RETRY TEST", resetLevel],
+          ["MAIN MENU", () =>
+            setGameState(GameState.MENU)]
+        ]
+      );
     }
-  }
-
-  function clearMovement() {
-    input.left = false;
-    input.right = false;
-    input.up = false;
-    input.down = false;
   }
 
   function resetLevel() {
-    player.x = width() * 0.22;
-    player.y = height() * 0.5;
+    resetPositions();
+
     player.hp = player.maxHp;
 
-    enemiesRemaining = 1;
-
-    portal.x = width() * 0.82;
-    portal.y = height() * 0.5;
     portal.active = false;
+    enemiesRemaining = 1;
 
     setGameState(GameState.PLAYING);
   }
 
-  function width() {
-    return canvas.width / dpr();
+  function clearInput() {
+    input.x = 0;
+    input.y = 0;
   }
 
-  function height() {
-    return canvas.height / dpr();
+  function update(dt) {
+    if (gameState !== GameState.PLAYING) {
+      return;
+    }
+
+    if (input.x || input.y) {
+      const len =
+        Math.hypot(input.x, input.y) || 1;
+
+      player.x +=
+        (input.x / len) *
+        player.speed *
+        dt;
+
+      player.y +=
+        (input.y / len) *
+        player.speed *
+        dt;
+    }
+
+    player.x = clamp(
+      player.x,
+      player.radius,
+      W - player.radius
+    );
+
+    player.y = clamp(
+      player.y,
+      player.radius,
+      H - player.radius
+    );
+
+    if (player.hp <= 0) {
+      player.hp = 0;
+      setGameState(GameState.PLAYER_DEAD);
+      return;
+    }
+
+    if (enemiesRemaining <= 0) {
+      portal.active = true;
+    }
+
+    if (portal.active) {
+      const distance = Math.hypot(
+        player.x - portal.x,
+        player.y - portal.y
+      );
+
+      if (distance <= portal.radius) {
+        setGameState(
+          GameState.LEVEL_COMPLETE
+        );
+      }
+    }
   }
 
-  function dpr() {
-    return Math.min(window.devicePixelRatio || 1, 1.5);
+  function render() {
+    ctx.fillStyle = "#090611";
+    ctx.fillRect(0, 0, W, H);
+
+    // Simple static-looking arena.
+    ctx.fillStyle = "#110b20";
+    ctx.fillRect(
+      0,
+      H * 0.18,
+      W,
+      H * 0.64
+    );
+
+    if (gameState === GameState.MENU) {
+      renderMenu();
+      return;
+    }
+
+    renderPortal();
+    renderPlayer();
+    renderHUD();
+    renderTestLabels();
+  }
+
+  function renderPlayer() {
+    ctx.fillStyle = "#18dcea";
+
+    ctx.beginPath();
+
+    ctx.arc(
+      player.x,
+      player.y,
+      player.radius,
+      0,
+      Math.PI * 2
+    );
+
+    ctx.fill();
+
+    ctx.fillStyle = "#071015";
+    ctx.font = "bold 11px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      "HERO",
+      player.x,
+      player.y + 4
+    );
+  }
+
+  function renderPortal() {
+    ctx.strokeStyle =
+      portal.active
+        ? "#ffd52f"
+        : "#4b4358";
+
+    ctx.lineWidth = 7;
+
+    ctx.beginPath();
+
+    ctx.arc(
+      portal.x,
+      portal.y,
+      portal.radius,
+      0,
+      Math.PI * 2
+    );
+
+    ctx.stroke();
+
+    ctx.fillStyle =
+      portal.active
+        ? "#ffe875"
+        : "#746b80";
+
+    ctx.font = "bold 12px Arial";
+    ctx.textAlign = "center";
+
+    ctx.fillText(
+      portal.active
+        ? "EXIT"
+        : "LOCKED",
+      portal.x,
+      portal.y + 4
+    );
+  }
+
+  function renderHUD() {
+    const barW = Math.min(250, W * 0.28);
+
+    ctx.fillStyle = "#1d1726";
+    ctx.fillRect(
+      20,
+      20,
+      barW,
+      16
+    );
+
+    ctx.fillStyle = "#ff426d";
+
+    ctx.fillRect(
+      20,
+      20,
+      barW *
+        (player.hp / player.maxHp),
+      16
+    );
+
+    ctx.fillStyle = "white";
+
+    ctx.font = "bold 13px Arial";
+    ctx.textAlign = "left";
+
+    ctx.fillText(
+      `HP ${player.hp}/${player.maxHp}`,
+      20,
+      55
+    );
+  }
+
+  function renderTestLabels() {
+    ctx.fillStyle = "#b9aec5";
+    ctx.font = "12px Arial";
+
+    ctx.textAlign = "right";
+
+    ctx.fillText(
+      "UPPER RIGHT: unlock portal",
+      W - 20,
+      30
+    );
+
+    ctx.fillText(
+      "LOWER RIGHT: take lethal damage",
+      W - 20,
+      50
+    );
+  }
+
+  function renderMenu() {
+    const short = H < 500;
+
+    ctx.textAlign = "center";
+
+    ctx.fillStyle = "#ff315e";
+
+    ctx.font =
+      `900 ${short ? 38 : 58}px Arial`;
+
+    ctx.fillText(
+      "SHADOW NEXUS 2",
+      W / 2,
+      H * 0.30
+    );
+
+    ctx.fillStyle = "#c7b9d7";
+
+    ctx.font =
+      `${short ? 13 : 18}px Arial`;
+
+    ctx.fillText(
+      "PERFORMANCE BASELINE",
+      W / 2,
+      H * 0.40
+    );
+
+    const bw = Math.min(
+      380,
+      W * 0.52
+    );
+
+    const bh = short ? 54 : 66;
+
+    const bx = (W - bw) / 2;
+    const by = H * 0.52;
+
+    ctx.fillStyle = "#241532";
+
+    ctx.fillRect(
+      bx,
+      by,
+      bw,
+      bh
+    );
+
+    ctx.strokeStyle = "#ffd43b";
+    ctx.lineWidth = 2;
+
+    ctx.strokeRect(
+      bx,
+      by,
+      bw,
+      bh
+    );
+
+    ctx.fillStyle = "white";
+
+    ctx.font =
+      `bold ${short ? 18 : 22}px Arial`;
+
+    ctx.fillText(
+      "START SYSTEM TEST",
+      W / 2,
+      by + bh / 2 + 7
+    );
+
+    menuButton = {
+      x: bx,
+      y: by,
+      w: bw,
+      h: bh
+    };
+  }
+
+  function showOverlay(
+    title,
+    message,
+    buttons
+  ) {
+    hideOverlay();
+
+    const overlay =
+      document.createElement("div");
+
+    overlay.id = "state-overlay";
+
+    Object.assign(
+      overlay.style,
+      {
+        position: "fixed",
+        inset: "0",
+        zIndex: "9000",
+        background:
+          "rgba(5,3,12,.94)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "white",
+        padding: "16px"
+      }
+    );
+
+    const h =
+      document.createElement("h1");
+
+    h.textContent = title;
+
+    h.style.margin = "0 0 8px";
+    h.style.color = "#ff315e";
+
+    h.style.fontSize =
+      "clamp(30px,7vw,54px)";
+
+    overlay.appendChild(h);
+
+    const p =
+      document.createElement("p");
+
+    p.textContent = message;
+    p.style.color = "#cbbddd";
+
+    overlay.appendChild(p);
+
+    buttons.forEach(
+      ([label, action]) => {
+        const button =
+          document.createElement(
+            "button"
+          );
+
+        button.textContent = label;
+
+        Object.assign(
+          button.style,
+          {
+            width:
+              "min(340px,70vw)",
+            minHeight: "50px",
+            margin: "6px",
+            border:
+              "1px solid #ffd43b",
+            background: "#221330",
+            color: "white",
+            borderRadius: "12px",
+            fontWeight: "bold"
+          }
+        );
+
+        button.onclick = action;
+
+        overlay.appendChild(
+          button
+        );
+      }
+    );
+
+    document.body.appendChild(
+      overlay
+    );
+  }
+
+  function hideOverlay() {
+    document
+      .getElementById(
+        "state-overlay"
+      )
+      ?.remove();
+  }
+
+  function clamp(
+    value,
+    min,
+    max
+  ) {
+    return Math.max(
+      min,
+      Math.min(max, value)
+    );
+  }
+
+  canvas.addEventListener(
+    "pointerdown",
+    (event) => {
+      const x = event.clientX;
+      const y = event.clientY;
+
+      if (
+        gameState ===
+        GameState.MENU
+      ) {
+        if (
+          menuButton &&
+          x >= menuButton.x &&
+          x <=
+            menuButton.x +
+            menuButton.w &&
+          y >= menuButton.y &&
+          y <=
+            menuButton.y +
+            menuButton.h
+        ) {
+          resetLevel();
+        }
+
+        return;
+      }
+
+      if (
+        gameState !==
+        GameState.PLAYING
+      ) {
+        return;
+      }
+
+      if (x < W * 0.62) {
+        const cx = W * 0.24;
+        const cy = H * 0.62;
+
+        input.x = x - cx;
+        input.y = y - cy;
+      } else {
+        if (y < H * 0.5) {
+          enemiesRemaining = 0;
+          portal.active = true;
+        } else {
+          player.hp = 0;
+        }
+      }
+    }
+  );
+
+  window.addEventListener(
+    "pointerup",
+    clearInput
+  );
+
+  window.addEventListener(
+    "pointercancel",
+    clearInput
+  );
+
+  function frame(now) {
+    const dt = Math.min(
+      (now - lastTime) / 1000,
+      0.05
+    );
+
+    lastTime = now;
+
+    update(dt);
+    render();
+
+    requestAnimationFrame(frame);
+  }
+
+  console.log(
+    `[SN2] Build ${BUILD}`
+  );
+
+  requestAnimationFrame(frame);
+})();    return Math.min(window.devicePixelRatio || 1, 1.5);
   }
 
   function resize() {
